@@ -119,21 +119,21 @@ def get_page_info(category_id):
 
     tries_count = 0
 
-    # while True:
-    #     if tries_count >= 10:
-    #         return {}
-    #     try:
-    #         items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
-    #         break
-    #     except (StaleElementReferenceException, NoSuchElementException):
-    #         time.sleep(2)
-    #         tries_count += 1
+    while True:
+        if tries_count >= 10:
+            return {}
+        try:
+            items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
+            break
+        except (StaleElementReferenceException, NoSuchElementException):
+            time.sleep(1)
+            tries_count += 1
 
-    try:
-        items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
-    except StaleElementReferenceException:
-        time.sleep(1)
-        items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
+    # try:
+    #     items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
+    # except StaleElementReferenceException:
+    #     time.sleep(1)
+    #     items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
 
     # items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
     items_count = int(items_count_elem.text.split(': ')[-1])
