@@ -1,15 +1,14 @@
-import pprint
 import time
 from math import ceil
-from multiprocessing.pool import Pool
 
-import requests
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 from openpyxl.reader.excel import load_workbook
 from openpyxl.styles import Side, Border, Alignment, Font
 from selenium import webdriver
-from selenium.common import StaleElementReferenceException, NoSuchElementException
+from selenium.common import StaleElementReferenceException, NoSuchElementException, ElementClickInterceptedException, \
+    WebDriverException
+from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 
 import settings
@@ -38,8 +37,6 @@ align = Alignment(horizontal='center', vertical='center')
 #         pass
 
 def get_web_driver():
-    # PROXY = '122.118.196.240:8088'
-
     ua = UserAgent(platforms='pc', os=['windows', 'macos', 'linux'])
     user_agent = ua.random
     options = webdriver.ChromeOptions()
@@ -56,10 +53,69 @@ def get_web_driver():
     return driver
 
 
-def get_page_info():
+def get_used_categories():
+    with open('used_categories.txt', 'r') as file:
+        return [category.strip() for category in file.readlines()]
+
+
+def get_list_of_category_ids():
+    used_categories = get_used_categories()
+
     driver = get_web_driver()
     driver.implicitly_wait(5)
-    driver.get(url=f'{BASE_URL}/catalog/1590/')
+
+    driver.get(url=f'{BASE_URL}')
+
+    time.sleep(2)
+
+    menu_button = driver.find_element(By.CSS_SELECTOR, '[data-test="catalog-button"]').click()
+
+    time.sleep(2)
+
+    while True:
+        try:
+            print('Получаем список категорий')
+            list_of_categories = driver.find_element(By.CLASS_NAME, 'sections-menu-top')
+            list_of_categories = list_of_categories.find_elements(By.TAG_NAME, 'ul')
+            list_of_categories = list_of_categories[0].find_elements(By.TAG_NAME, 'li')
+            break
+        except (StaleElementReferenceException, NoSuchElementException):
+            time.sleep(1)
+
+    action = ActionChains(driver)
+
+    result = []
+    count = 0
+
+    for category in list_of_categories:
+        action.move_to_element(category).perform()
+        time.sleep(0.5)
+        items = driver.find_elements(By.CLASS_NAME, 'masonry-brick')
+        for item in items:
+            if count >= 4:
+                break
+
+            item = item.find_element(By.CLASS_NAME, 'subsection').find_element(By.CLASS_NAME, 'subsection-childs')
+            for child in item.find_elements(By.TAG_NAME, 'a'):
+                category_href = child.get_attribute('href').split('/')[-2]
+                if category_href not in used_categories:
+                    result.append(category_href)
+                    count += 1
+
+                    if count >= 4:
+                        break
+        if count >= 4:
+            break
+
+    driver.close()
+
+    return result
+
+def get_page_info(category_id):
+    driver = get_web_driver()
+    driver.implicitly_wait(5)
+    url = f'{BASE_URL}/catalog/{category_id}/'
+    driver.get(url)
 
     tries_count = 0
 
@@ -84,17 +140,19 @@ def get_page_info():
 
     page_count = ceil(items_count / ITEMS_PER_PAGE) + 1
 
+    category_title = driver.find_element(By.CLASS_NAME, 'categories-title').text
+
     driver.close()
 
-    return items_count, page_count
+    return {'category_title': category_title, 'items_count': items_count, 'page_count': page_count}
 
 
-def get_items_ids(max_pages):
+def get_items_ids(category_id, max_pages):
     result = []
 
     for page in range(max_pages):
         driver = get_web_driver()
-        driver.get(f'{BASE_URL}/catalog/1590/?p={page}')
+        driver.get(f'{BASE_URL}/catalog/{category_id}/?p={page}')
 
         time.sleep(1.5)
 
@@ -103,18 +161,38 @@ def get_items_ids(max_pages):
         items = bs.find_all('div', class_='fade-in-list')
 
         for ind, item in enumerate(items, 1):
-            item_info = item.find('p', class_='swiper-no-swiping')
-            result.append(item_info.text)
+            while True:
+                try:
+                    item_info = item.find('p', class_='swiper-no-swiping')
+                    result.append(item_info.text)
+                    break
+                except AttributeError:
+                    print(f'{BASE_URL}/catalog/{category_id}/?p={page}')
+                    time.sleep(1)
+                    continue
 
         driver.close()
 
+    result = list(set(result))
+
     return result
+
+
+def get_category_info(category_id):
+    page_info = get_page_info(category_id)
+    item_ids = get_items_ids(category_id, page_info['page_count'])
+
+    return {'category_title': page_info['category_title'], 'category_id': category_id, 'item_ids': item_ids}
 
 
 def get_item_data(item_id):
     driver = get_web_driver()
 
-    driver.get(f'{BASE_URL}/product/{item_id}/')
+    # print(f'{BASE_URL}/product/{item_id}/')
+    try:
+        driver.get(f'{BASE_URL}/product/{item_id}/')
+    except WebDriverException:
+        return {}
 
     time.sleep(0.5)
 
@@ -122,19 +200,17 @@ def get_item_data(item_id):
 
     while True:
         if tries_count >= 10:
-            return
+            return {}
         try:
             driver.find_element(By.CSS_SELECTOR, '[data-test="product-characteristics-tab"]').click()
             break
         except (StaleElementReferenceException, NoSuchElementException):
             time.sleep(2)
             tries_count += 1
-
-    # try:
-    #     driver.find_element(By.CSS_SELECTOR, '[data-test="product-characteristics-tab"]').click()
-    # except (StaleElementReferenceException, NoSuchElementException):
-    #     time.sleep(4)
-    #     driver.find_element(By.CSS_SELECTOR, '[data-test="product-characteristics-tab"]').click()
+        except ElementClickInterceptedException:
+            break
+        except WebDriverException:
+            return {}
 
     bs = BeautifulSoup(driver.page_source, 'html.parser')
 
@@ -149,7 +225,8 @@ def get_item_data(item_id):
     item_data = {
         'ID': item_id,
         'Название': title,
-        'Цена': price
+        'Цена': price,
+        'Ссылка': f'{BASE_URL}/product/{item_id}/',
     }
 
     product_tabs = bs.find_all('span', class_='product-title-text')
@@ -163,14 +240,20 @@ def get_item_data(item_id):
 
     if properties_table:
         for li in properties_table.find_all('li'):
-            item_key = li.find('div', class_='title').text
-            item_value = li.find('div', class_='value').text
+            while True:
+                try:
+                    item_key = li.find('div', class_='title').text
+                    item_value = li.find('div', class_='value').text
+                    item_data[item_key] = item_value
+                    break
+                except AttributeError:
+                    time.sleep(1)
+                    continue
 
-            item_data[item_key] = item_value
+            # item_key = li.find('div', class_='title').text
+            # item_value = li.find('div', class_='value').text
+
     return item_data
-
-
-# get_item_data(170014)
 
 def upload_products_info(data):
     # data = [
@@ -231,56 +314,59 @@ def upload_products_info(data):
 
     wb = load_workbook(settings.FILE_NAME)
 
-    ws = wb.active
-
-    headers = []
+    headers = {}
 
     for product in data:
+        product_type = product.get('Тип товара')
+
+        if not product or not product_type:
+            continue
+        elif product_type not in headers:
+            headers[product_type] = list(product.keys())
+
         for key in product.keys():
-            if key not in headers:
-                headers.append(key)
+            if key not in headers[product_type]:
+                headers[product_type].append(key)
+
+        sheet_name = product_type
+        if len(sheet_name) > 25:
+            sheet_name = sheet_name[:25] + '...'
         # headers = [col[0].value for col in [row for row in ws.iter_rows(min_row=1, max_row=1, max_col=30)] if col[0].value is not None]
 
-    for col, value in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=col)
-        cell.value = value
-        cell.alignment = align
-        cell.border = bold_border
-        cell.font = bold_font
+        if sheet_name not in wb.sheetnames:
+            wb.create_sheet(sheet_name)
+            ws = wb[sheet_name]
 
-    print(headers)
+            for col, value in enumerate(headers[product_type], start=1):
+                cell = ws.cell(row=1, column=col)
+                cell.value = value
+                cell.alignment = align
+                cell.border = bold_border
+                cell.font = bold_font
 
     for ind, product in enumerate(data, 2):
-        for row in ws.iter_rows(min_row=ind, max_row=ind, max_col=len(headers)):
+        product_type = product.get('Тип товара')
+        if not product or not product_type:
+            continue
+
+        sheet_name = product_type
+        if len(sheet_name) > 25:
+            sheet_name = sheet_name[:25] + '...'
+
+        ws = wb[sheet_name]
+        max_row = ws.max_row + 1
+        for row in ws.iter_rows(min_row=max_row, max_row=max_row, max_col=len(headers[product_type])):
             for col in row:
                 col.border = thin_border
 
         for key, value in product.items():
-            column = headers.index(key) + 1
-            cell = ws.cell(row=ind, column=column)
+            column = headers[product_type].index(key) + 1
+            cell = ws.cell(row=max_row, column=column)
             cell.value = value
 
-            # print(key, ws.cell(row=ind, column=column).value)
-
-        # for key, value in product.items():
-        #     for row in ws.iter_rows(min_row=1, max_row=1, max_col=30):
-        #         for col in row:
-        #             if not col.value:
-        #                 col.value = key
-        #                 break
-        # print(row)
-        # if key == col[0].value:
-        #     col[0].value = value
+            if key == 'Ссылка':
+                cell.hyperlink = value
 
     wb.save(settings.FILE_NAME)
 
     upload_file_to_google_drive(file, settings.FILE_NAME)
-
-# with open('proxy_list.txt') as f:
-#     proxies = f.readlines()
-#
-# print(proxies)
-#
-# with Pool(5) as p:
-#     p.map(check_proxies, proxies)
-# # check_proxies()

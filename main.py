@@ -4,55 +4,45 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from fake_useragent import UserAgent
-from services import get_page_info, get_items_ids, get_web_driver, get_item_data, upload_products_info
+from services import get_page_info, get_items_ids, get_web_driver, get_item_data, upload_products_info, \
+    get_list_of_category_ids, get_category_info
 from multiprocessing import Pool
 
 BASE_URL = 'https://petrovich.ru'
 
-
-def main():
+def main(category_ids):
     start = time.time()
-    items_count, max_pages = get_page_info()
-    item_ids = get_items_ids(max_pages)
 
-    #очищаем от дубликатов
-    item_ids = list(set(item_ids))
+    with Pool(4) as p1:
+        category_items = p1.map(get_category_info, category_ids)
 
-    print(f'Кол-во ID: {len(item_ids)}')
+    for category in category_items:
+        items_ids = category['item_ids']
+        # category_title = category['category_title']
+        # print(f'Категория: {category_title}', {category['category_id']})
+        with Pool(6) as p2:
+            result = p2.map(get_item_data, items_ids)
 
-    start_1 = time.time()
+        print(f'Кол-во данных: {len(result)}')
 
-    with Pool(5) as p:
-        result = p.map(get_item_data, item_ids)
+        # pprint.pprint(result)
 
-    end_1 = time.time()
-    print(f'Кол-во данных: {len(result)}')
+        upload_products_info(result)
+
+        with open('used_categories.txt', 'a') as file:
+            file.write(category['category_id'] + '\n')
 
     end = time.time()
 
     minutes = int(end - start) // 60
     seconds = int(end - start) % 60
 
-    minutes_1 = int(end_1 - start_1) // 60
-    seconds_1 = int(end_1 - start_1) % 60
-
     print(f'Время выполнения: {minutes} минут {seconds} секунд')
-    print(f'Скорость выполнения: {round((end - start) / items_count, 2)} секунд на 1 элемент')
-
-    print(f'Время выполнения парсинга: {minutes_1} минут {seconds_1} секунд')
-    print(f'Скорость выполнения: {round((end_1 - start_1) / items_count, 2)} секунд на 1 элемент')
-
-    start_2 = time.time()
-
-    upload_products_info(result)
-
-    end_2 = time.time()
-
-    minutes_2 = int(end_2 - start_2) // 60
-    seconds_2 = int(end_2 - start_2) % 60
-
-    print(f'Время выполнения загрузки: {minutes_2} минут {seconds_2} секунд')
 
 
 if __name__ == '__main__':
-    main()
+    category_ids = get_list_of_category_ids()
+
+    while category_ids:
+        main(category_ids)
+        category_ids = get_list_of_category_ids()
