@@ -17,6 +17,7 @@ def main(category_ids):
         category_items = p1.map(get_category_info, category_ids)
 
     for category in category_items:
+        category_title = category['category_title']
         items_ids = category['item_ids']
         # category_title = category['category_title']
         # print(f'Категория: {category_title}', {category['category_id']})
@@ -27,7 +28,7 @@ def main(category_ids):
 
         # pprint.pprint(result)
 
-        upload_products_info(result)
+        upload_products_info(category_title, result)
 
         with open('used_categories.txt', 'a') as file:
             file.write(category['category_id'] + '\n')

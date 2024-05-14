@@ -1,3 +1,4 @@
+import pprint
 import time
 from math import ceil
 
@@ -65,21 +66,23 @@ def get_list_of_category_ids():
     driver.implicitly_wait(5)
 
     driver.get(url=f'{BASE_URL}')
-
-    time.sleep(2)
-
-    menu_button = driver.find_element(By.CSS_SELECTOR, '[data-test="catalog-button"]').click()
-
     time.sleep(2)
 
     while True:
         try:
+
+            menu_button = driver.find_element(By.CSS_SELECTOR, '[data-test="catalog-button"]').click()
+
+            time.sleep(2)
+
             print('Получаем список категорий')
             list_of_categories = driver.find_element(By.CLASS_NAME, 'sections-menu-top')
             list_of_categories = list_of_categories.find_elements(By.TAG_NAME, 'ul')
             list_of_categories = list_of_categories[0].find_elements(By.TAG_NAME, 'li')
             break
         except (StaleElementReferenceException, NoSuchElementException):
+            menu_button = driver.find_element(By.CSS_SELECTOR, '[data-test="catalog-button"]').click()
+
             time.sleep(1)
 
     action = ActionChains(driver)
@@ -111,6 +114,7 @@ def get_list_of_category_ids():
 
     return result
 
+
 def get_page_info(category_id):
     driver = get_web_driver()
     driver.implicitly_wait(5)
@@ -120,14 +124,17 @@ def get_page_info(category_id):
     tries_count = 0
 
     while True:
-        if tries_count >= 10:
+        if tries_count >= 5:
+            driver.close()
+
             return {}
         try:
             items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
             break
         except (StaleElementReferenceException, NoSuchElementException):
-            time.sleep(1)
+            time.sleep(2)
             tries_count += 1
+
 
     # try:
     #     items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
@@ -140,7 +147,17 @@ def get_page_info(category_id):
 
     page_count = ceil(items_count / ITEMS_PER_PAGE) + 1
 
-    category_title = driver.find_element(By.CLASS_NAME, 'categories-title').text
+    while True:
+        if tries_count >= 5:
+            driver.close()
+
+            return {}
+        try:
+            category_title = driver.find_element(By.CLASS_NAME, 'categories-title').text
+            break
+        except (StaleElementReferenceException, NoSuchElementException):
+            time.sleep(2)
+            tries_count += 1
 
     driver.close()
 
@@ -255,7 +272,8 @@ def get_item_data(item_id):
 
     return item_data
 
-def upload_products_info(data):
+
+def upload_products_info(category_title, data):
     # data = [
     #     {'ID': '656216',
     #      'Название': 'Наличник 70х8х2150 мм финишпленка серый (1 шт.)',
@@ -314,53 +332,42 @@ def upload_products_info(data):
 
     wb = load_workbook(settings.FILE_NAME)
 
-    headers = {}
+    headers = []
+
+    sheet_name = category_title
+    if len(sheet_name) > 25:
+        sheet_name = sheet_name[:25] + '...'
+
+    if sheet_name not in wb.sheetnames:
+        wb.create_sheet(sheet_name)
+
+    ws = wb[sheet_name]
 
     for product in data:
-        product_type = product.get('Тип товара')
-
-        if not product or not product_type:
-            continue
-        elif product_type not in headers:
-            headers[product_type] = list(product.keys())
-
         for key in product.keys():
-            if key not in headers[product_type]:
-                headers[product_type].append(key)
+            if key not in headers:
+                headers.append(key)
 
-        sheet_name = product_type
-        if len(sheet_name) > 25:
-            sheet_name = sheet_name[:25] + '...'
-        # headers = [col[0].value for col in [row for row in ws.iter_rows(min_row=1, max_row=1, max_col=30)] if col[0].value is not None]
-
-        if sheet_name not in wb.sheetnames:
-            wb.create_sheet(sheet_name)
-            ws = wb[sheet_name]
-
-            for col, value in enumerate(headers[product_type], start=1):
-                cell = ws.cell(row=1, column=col)
-                cell.value = value
-                cell.alignment = align
-                cell.border = bold_border
-                cell.font = bold_font
+    for col, value in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col)
+        cell.value = value
+        cell.alignment = align
+        cell.border = bold_border
+        cell.font = bold_font
 
     for ind, product in enumerate(data, 2):
-        product_type = product.get('Тип товара')
-        if not product or not product_type:
+        # product_type = product.get('Тип товара')
+        if not product:
             continue
 
-        sheet_name = product_type
-        if len(sheet_name) > 25:
-            sheet_name = sheet_name[:25] + '...'
-
-        ws = wb[sheet_name]
         max_row = ws.max_row + 1
-        for row in ws.iter_rows(min_row=max_row, max_row=max_row, max_col=len(headers[product_type])):
+
+        for row in ws.iter_rows(min_row=max_row, max_row=max_row, max_col=len(headers)):
             for col in row:
                 col.border = thin_border
 
         for key, value in product.items():
-            column = headers[product_type].index(key) + 1
+            column = headers.index(key) + 1
             cell = ws.cell(row=max_row, column=column)
             cell.value = value
 
