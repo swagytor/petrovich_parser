@@ -13,7 +13,7 @@ BASE_URL = 'https://petrovich.ru'
 def main(category_ids):
     start = time.time()
 
-    with Pool(4) as p1:
+    with Pool(6) as p1:
         category_items = p1.map(get_category_info, category_ids)
 
     for category in category_items:
@@ -24,7 +24,7 @@ def main(category_ids):
         with Pool(6) as p2:
             result = p2.map(get_item_data, items_ids)
 
-        print(f'Кол-во данных: {len(result)}')
+        print(f'{category_title}, Кол-во данных: {len(result)}')
 
         # pprint.pprint(result)
 

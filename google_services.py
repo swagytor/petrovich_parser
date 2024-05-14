@@ -18,5 +18,5 @@ def upload_file_to_google_drive(file, file_name):
 
     file.Upload(param={'convert': True})
 
-    if os.path.exists(file_name):
-        os.remove(file_name)
+    # if os.path.exists(file_name):
+    #     os.remove(file_name)

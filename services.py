@@ -8,7 +8,7 @@ from openpyxl.reader.excel import load_workbook
 from openpyxl.styles import Side, Border, Alignment, Font
 from selenium import webdriver
 from selenium.common import StaleElementReferenceException, NoSuchElementException, ElementClickInterceptedException, \
-    WebDriverException
+    WebDriverException, SessionNotCreatedException
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 
@@ -48,9 +48,12 @@ def get_web_driver():
     options.add_argument('--disable-dev-shm-usage')
     # options.add_argument('--proxy-server=93.157.248.108:88')
     # options.add_argument('--proxy-server=http://%s' % PROXY)
-
-    driver = webdriver.Chrome(options)
-
+    try:
+        driver = webdriver.Chrome(options)
+    except (SessionNotCreatedException, WebDriverException):
+        time.sleep(5)
+        driver = webdriver.Chrome(options)
+        
     return driver
 
 
@@ -95,7 +98,7 @@ def get_list_of_category_ids():
         time.sleep(0.5)
         items = driver.find_elements(By.CLASS_NAME, 'masonry-brick')
         for item in items:
-            if count >= 4:
+            if count >= 6:
                 break
 
             item = item.find_element(By.CLASS_NAME, 'subsection').find_element(By.CLASS_NAME, 'subsection-childs')
@@ -105,9 +108,9 @@ def get_list_of_category_ids():
                     result.append(category_href)
                     count += 1
 
-                    if count >= 4:
+                    if count >= 6:
                         break
-        if count >= 4:
+        if count >= 6:
             break
 
     driver.close()
@@ -130,6 +133,8 @@ def get_page_info(category_id):
             return {}
         try:
             items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
+            items_count = int(items_count_elem.text.split(': ')[-1])
+
             break
         except (StaleElementReferenceException, NoSuchElementException):
             time.sleep(2)
@@ -143,7 +148,6 @@ def get_page_info(category_id):
     #     items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
 
     # items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
-    items_count = int(items_count_elem.text.split(': ')[-1])
 
     page_count = ceil(items_count / ITEMS_PER_PAGE) + 1
 
@@ -209,6 +213,8 @@ def get_item_data(item_id):
     try:
         driver.get(f'{BASE_URL}/product/{item_id}/')
     except WebDriverException:
+        driver.close()
+
         return {}
 
     time.sleep(0.5)
@@ -217,6 +223,8 @@ def get_item_data(item_id):
 
     while True:
         if tries_count >= 10:
+            driver.close()
+
             return {}
         try:
             driver.find_element(By.CSS_SELECTOR, '[data-test="product-characteristics-tab"]').click()
@@ -227,9 +235,13 @@ def get_item_data(item_id):
         except ElementClickInterceptedException:
             break
         except WebDriverException:
+            driver.close()
+
             return {}
 
     bs = BeautifulSoup(driver.page_source, 'html.parser')
+
+    driver.close()
 
     title = bs.find('h1', class_='title-lg')
     if title:
@@ -327,6 +339,8 @@ def upload_products_info(category_title, data):
     #      'Упаковка': 'Полиэтилен',
     #      'Вес, кг': '0,7'}
     # ]
+
+    data = sorted(data, key=lambda x: x.get('Тип товара', ''))
 
     file = download_file_from_google_drive(settings.FILE_ID, settings.FILE_NAME)
 
