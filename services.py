@@ -209,7 +209,6 @@ def get_items_ids(category_id, max_pages):
 
 def get_category_info(category_id):
     page_info = get_page_info(category_id)
-    if
     item_ids = get_items_ids(category_id, page_info['page_count'])
 
     return {'category_title': page_info['category_title'], 'category_id': category_id, 'item_ids': item_ids}
