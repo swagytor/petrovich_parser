@@ -43,6 +43,7 @@ def get_web_driver():
     options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={user_agent}')
     options.add_argument('--no-sandbox')
+    options.add_argument('--log-level=3')
     # options.add_argument('--window-size=1920,1080')
     options.add_argument('--headless')
     options.add_argument('--disable-dev-shm-usage')
@@ -51,8 +52,7 @@ def get_web_driver():
     try:
         driver = webdriver.Chrome(options)
     except (SessionNotCreatedException, WebDriverException):
-        time.sleep(5)
-        driver = webdriver.Chrome(options)
+        pass
         
     return driver
 
@@ -66,6 +66,9 @@ def get_list_of_category_ids():
     used_categories = get_used_categories()
 
     driver = get_web_driver()
+    if not driver:
+        return []
+
     driver.implicitly_wait(5)
 
     driver.get(url=f'{BASE_URL}')
@@ -120,6 +123,8 @@ def get_list_of_category_ids():
 
 def get_page_info(category_id):
     driver = get_web_driver()
+    if not driver:
+        return {'category_title': '', 'items_count': 0, 'page_count': 0}
     driver.implicitly_wait(5)
     url = f'{BASE_URL}/catalog/{category_id}/'
     driver.get(url)
@@ -130,7 +135,7 @@ def get_page_info(category_id):
         if tries_count >= 5:
             driver.close()
 
-            return {}
+            return {'category_title': '', 'items_count': 0, 'page_count': 0}
         try:
             items_count_elem = driver.find_element(By.CSS_SELECTOR, '[data-test="products-counter"]')
             items_count = int(items_count_elem.text.split(': ')[-1])
@@ -155,7 +160,7 @@ def get_page_info(category_id):
         if tries_count >= 5:
             driver.close()
 
-            return {}
+            return {'category_title': '', 'items_count': 0, 'page_count': 0}
         try:
             category_title = driver.find_element(By.CLASS_NAME, 'categories-title').text
             break
@@ -173,6 +178,9 @@ def get_items_ids(category_id, max_pages):
 
     for page in range(max_pages):
         driver = get_web_driver()
+        if not driver:
+            continue
+
         driver.get(f'{BASE_URL}/catalog/{category_id}/?p={page}')
 
         time.sleep(1.5)
@@ -201,6 +209,7 @@ def get_items_ids(category_id, max_pages):
 
 def get_category_info(category_id):
     page_info = get_page_info(category_id)
+    if
     item_ids = get_items_ids(category_id, page_info['page_count'])
 
     return {'category_title': page_info['category_title'], 'category_id': category_id, 'item_ids': item_ids}
@@ -208,6 +217,9 @@ def get_category_info(category_id):
 
 def get_item_data(item_id):
     driver = get_web_driver()
+    if not driver:
+        return {}
+
 
     # print(f'{BASE_URL}/product/{item_id}/')
     try:
