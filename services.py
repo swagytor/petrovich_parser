@@ -52,7 +52,7 @@ def get_web_driver():
     try:
         driver = webdriver.Chrome(options)
     except (SessionNotCreatedException, WebDriverException):
-        pass
+        driver = None
         
     return driver
 
